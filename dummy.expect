@@ -1,0 +1,28 @@
+#!/usr/bin/expect -f
+set timeout -1
+
+# config file containing DEVICE_NAME
+set config [lindex $argv 0]
+if {$config == ""} {
+    puts "Usage: dummy_setup.expect <config-file>"
+    exit 1
+}    
+
+# Read DEVICE_NAME=... from file
+set fp [open $config r]
+set data [read $fp]
+close $fp
+regexp {DEVICE_NAME=([^\n\r]+)} $data -> device_name
+
+spawn ./dummy.sh
+
+expect -re "different device name"
+send "y\r"
+
+expect -re "identify this device"
+send "$device_name\r"
+
+expect -re "Purple screen popup"
+send "\r"
+
+expect eof
