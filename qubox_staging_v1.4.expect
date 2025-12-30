@@ -1,0 +1,210 @@
+#!/usr/bin/expect -f
+set timeout -1
+
+# ---------- Ask user for inputs ----------
+proc ask_user {prompt} {
+    puts -nonewline $prompt
+    flush stdout
+    expect_user -re "(.*)\n"
+    return [string trim $expect_out(1,string)]
+}
+
+set store_num [ask_user "Enter Store Number: "]
+set qu_num    [ask_user "Enter Qu Number: "]
+set dev_id    [ask_user "Enter Device ID: "]
+
+if {![string is integer -strict $store_num]} {
+    puts "ERROR: Store Number must be an integer."
+    exit 1
+}
+# dev_id might be numeric; if it isn't, IP last octet will be invalid. Warn, but proceed.
+if {![string is integer -strict $dev_id]} {
+    puts "WARNING: Device ID is not an integer. IP last octet may be invalid."
+}
+
+# ---------- Compute device name ----------
+set device_name "c405s${qu_num}d${dev_id}"
+puts "Computed DEVICE_NAME: $device_name"
+
+# ---------- Compute IP from store_num + dev_id ----------
+# matches your formula (bc not needed in Tcl)
+set first_octet  "10"
+set second_octet [expr {int($store_num / 256) + 130}]
+set third_octet  [expr {$store_num % 256}]
+set last_octet   "27"
+set ip_address "${first_octet}.${second_octet}.${third_octet}.${last_octet}"
+
+puts "Computed IP_ADDRESS: $ip_address"
+
+# Write a runtime env file (optional but handy for auditing)
+set runtime_file "./device.runtime.env"
+set fp [open $runtime_file "w"]
+puts $fp "STORE_NUMBER=$store_num"
+puts $fp "QU_NUMBER=$qu_num"
+puts $fp "DEVICE_ID=$dev_id"
+puts $fp "DEVICE_NAME=$device_name"
+puts $fp "IP_ADDRESS=$ip_address"
+close $fp
+puts "Wrote runtime values to $runtime_file"
+
+# ---------- Docker wait helper ----------
+proc wait_for_dockers {min_count name_pattern} {
+    while {1} {
+        set total_str [exec sh -c "docker ps -q | wc -l"]
+        set total [string trim $total_str]
+
+        set names_output [exec sh -c "docker ps --format '{{.Names}}' 2>/dev/null || true"]
+        set names [split $names_output "\n"]
+
+        set have_match 0
+        foreach n $names {
+            if {$n eq ""} { continue }
+            if {[string match $name_pattern $n]} {
+                set have_match 1
+                break
+            }
+        }
+
+        puts "Docker status: $total containers, match=$have_match (pattern: $name_pattern)"
+
+        if {[string is integer -strict $total] && $total >= $min_count && $have_match} {
+            puts "Docker requirement satisfied."
+            break
+        }
+
+        sleep 5
+    }
+}
+
+# ---------- (Optional) Set hostname early ----------
+# If your environment supports it and you want OS hostname to match:
+# exec sudo hostnamectl set-hostname $device_name
+
+# ---------- Step 1: Download ecs-registration.sh ----------
+puts "\n=== Downloading ecs-registration.sh ==="
+# Safer curl proto restriction form:
+spawn sudo curl --proto "=https" -o ecs-registration.sh https://qu-releases.qubeyond.com/qubox/ecs-registration.sh
+expect eof
+
+puts "\n=== chmod +x ecs-registration.sh ==="
+spawn sudo chmod +x ecs-registration.sh
+expect eof
+
+# ---------- Step 2: Run ecs-registration.sh and answer prompts ----------
+puts "\n=== Running ecs-registration.sh ==="
+spawn sudo ./ecs-registration.sh
+
+# Device name prompts
+expect -re {Do you want to set a different device name\?\s*\(y/n\)} { send "Y\r" }
+expect -re {Please enter a name to identify this device.*}         { send "$device_name\r" }
+
+# Purple enter
+expect -re {Purple screen popup.*\[enter\]} { send "\r" }
+
+# Static IP choice -> NO (because we computed an IP, and it will be updated later using correct_cidr.py)
+expect -re {Do you want to set a static ip address\?\s*\(y/n\)} { send "N\r" }
+
+# If the script asks for the actual IP, send it.
+# This is intentionally loose to catch variations.
+expect {
+    -re {([Ee]nter|[Pp]lease enter).*(IP|ip).*(address|Address).*} {
+        send "$ip_address\r"
+        exp_continue
+    }
+    -re {([Ee]nter|[Pp]lease enter).*(netmask|mask).*} {
+        # default netmask; if your installer requires different, tell me and I’ll update
+        send "255.255.255.0\r"
+        exp_continue
+    }
+    -re {([Ee]nter|[Pp]lease enter).*(gateway|router).*} {
+        # common gateway guess: same /24 with .1
+        set gw "${first_octet}.${second_octet}.${third_octet}.1"
+        send "$gw\r"
+        exp_continue
+    }
+    -re {Press.*ENTER|press.*Enter|\[enter\]} {
+        # If it needs a press-enter step mid-run
+        send "\r"
+        exp_continue
+    }
+    eof { }
+}
+
+puts "\n=== ecs-registration.sh finished ==="
+
+# ---------- Step 3: Wait for docker readiness ----------
+puts "\n=== Waiting for 10 containers and traefik ==="
+wait_for_dockers 10 "ecs-qu-box-prod-*-traefik-*"
+
+# ---------- Step 4: Run /home/qu/activate.sh and capture GUID ----------
+puts "\n=== Running /home/qu/activate.sh and capturing GUID ==="
+spawn bash -c "cd /home/qu && bash activate.sh"
+
+set guid ""
+
+# GUID pattern: 6 groups of 4 alnum separated by 5 dashes
+# Example: 66be-3c3a-5647-9387-c0c4-1890
+expect {
+    -re {([A-Za-z0-9]{4}(?:-[A-Za-z0-9]{4}){5})} {
+        set guid $expect_out(1,string)
+        puts "Captured GUID: $guid"
+        exp_continue
+    }
+    eof { }
+}
+
+if {$guid eq ""} {
+    puts "WARNING: No GUID captured."
+} else {
+    set guid_file "./activation_guid.txt"
+    set gfp [open $guid_file "w"]
+    puts $gfp $guid
+    close $gfp
+    puts "Wrote GUID to $guid_file"
+}
+
+# ---------- Step 5: Configure IP with correct_cidr.py ----------
+puts -nonewline "\n=== Are you ready to configure the IP address? (y/n): "
+flush stdout
+expect_user -re "(.*)\n"
+set ready_ip [string tolower [string trim $expect_out(1,string)]]
+
+if {$ready_ip eq "y" || $ready_ip eq "yes"} {
+    puts "\n=== Running correct_cidr.py to configure IP ==="
+    
+    # Calculate gateway (assuming .1 in the same subnet)
+    set gateway "${first_octet}.${second_octet}.${third_octet}.1"
+    
+    spawn sudo python3 correct_cidr.py -u
+    
+    expect "Enter required IP address: " { send "$ip_address\r" }
+    expect "Enter desired gateay address: " { send "$gateway\r" }
+    expect -re {Is the follwing info correct.*\(y/n\)} { send "y\r" }
+    
+    expect eof
+    puts "\n=== IP configuration completed ==="
+} else {
+    puts "Skipping IP configuration."
+}
+
+# ---------- Step 6: Install BigFix ----------
+puts -nonewline "\n=== Are you ready for BigFix installation? (y/n): "
+flush stdout
+expect_user -re "(.*)\n"
+set ready_bigfix [string tolower [string trim $expect_out(1,string)]]
+
+if {$ready_bigfix eq "y" || $ready_bigfix eq "yes"} {
+    puts "\n=== Running BigFix_QuBox_Install.sh ==="
+    spawn sudo bash BigFix_QuBox_Install.sh
+    expect eof
+    puts "\n=== BigFix installation completed ==="
+} else {
+    puts "Skipping BigFix installation."
+}
+
+puts "\n=== Done (interactive run) ==="
+
+
+
+
+exit 0
