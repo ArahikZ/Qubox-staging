@@ -95,7 +95,7 @@ puts "\n=== Running ecs-registration.sh ==="
 spawn sudo ./ecs-registration.sh
 
 # Device name prompts
-expect -re {Do you want to set a different device name\?\s*\(y/n\)} { send "Y\r" }
+expect -re {Do you want to set a different device name\?\s*\(y/n\)} { send "y\r" }
 expect -re {Please enter a name to identify this device.*}         { send "$device_name\r" }
 
 # Purple enter
@@ -103,7 +103,7 @@ puts "Purple screen"
 # expect -re {Purple screen popup.*\[enter\]} { send "\r" }
 
 # Static IP choice -> NO (because we computed an IP, and it will be updated later using correct_cidr.py)
-expect -re {Do you want to set a static ip address\?\s*\(y/n\)} { send "N\r" }
+expect -re {Do you want to set a static ip address\?\s*\(y/n\)} { send "n\r" }
 
 expect eof
 puts "\n=== ecs-registration.sh finished ==="
