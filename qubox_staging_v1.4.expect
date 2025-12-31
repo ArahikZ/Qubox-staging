@@ -104,37 +104,13 @@ expect -re {Purple screen popup.*\[enter\]} { send "\r" }
 # Static IP choice -> NO (because we computed an IP, and it will be updated later using correct_cidr.py)
 expect -re {Do you want to set a static ip address\?\s*\(y/n\)} { send "N\r" }
 
-# If the script asks for the actual IP, send it.
-# This is intentionally loose to catch variations.
-expect {
-    -re {([Ee]nter|[Pp]lease enter).*(IP|ip).*(address|Address).*} {
-        send "$ip_address\r"
-        exp_continue
-    }
-    -re {([Ee]nter|[Pp]lease enter).*(netmask|mask).*} {
-        # default netmask; if your installer requires different, tell me and I’ll update
-        send "255.255.255.0\r"
-        exp_continue
-    }
-    -re {([Ee]nter|[Pp]lease enter).*(gateway|router).*} {
-        # common gateway guess: same /24 with .1
-        set gw "${first_octet}.${second_octet}.${third_octet}.1"
-        send "$gw\r"
-        exp_continue
-    }
-    -re {Press.*ENTER|press.*Enter|\[enter\]} {
-        # If it needs a press-enter step mid-run
-        send "\r"
-        exp_continue
-    }
-    eof { }
-}
 expect eof
 puts "\n=== ecs-registration.sh finished ==="
 
 # ---------- Step 3: Wait for docker readiness ----------
 puts "\n=== Waiting for 10 containers and traefik ==="
-wait_for_dockers 10 "ecs-qu-box-prod-*-traefik-*"
+# wait_for_dockers 10 "ecs-qu-box-prod-*-traefik-*"
+puts "\n=== skipping due to test environment ==="
 
 # ---------- Step 4: Run /home/qu/activate.sh and capture GUID ----------
 puts "\n=== Running /home/qu/activate.sh and capturing GUID ==="
@@ -172,8 +148,8 @@ set ready_ip [string tolower [string trim $expect_out(1,string)]]
 if {$ready_ip eq "y" || $ready_ip eq "yes"} {
     puts "\n=== Running correct_cidr.py to configure IP ==="
     
-    # Calculate gateway (assuming .1 in the same subnet)
-    set gateway "${first_octet}.${second_octet}.${third_octet}.1"
+    # Calculate gateway (assuming .30 in the same subnet)
+    set gateway "${first_octet}.${second_octet}.${third_octet}.30"
     
     spawn sudo python3 correct_cidr.py -u
     
@@ -187,7 +163,7 @@ if {$ready_ip eq "y" || $ready_ip eq "yes"} {
     puts "Skipping IP configuration."
 }
 # ---------- Step 6: timeadjustments ----------
-
+# other options? hawaii, alaska, etc.
 puts "\n=== System Time Zone Configuration ==="
 puts "Please select a timezone:"
 puts "1) US/Eastern"
