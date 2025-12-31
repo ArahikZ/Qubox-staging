@@ -76,50 +76,6 @@ proc wait_for_dockers {min_count name_pattern} {
     }
 }
 
-# ---------- (Optional) Set hostname early ----------
-# If your environment supports it and you want OS hostname to match:
-# exec sudo hostnamectl set-hostname $device_name
-
-# ---------- Step 1: Download ecs-registration.sh ----------
-puts "\n=== Downloading ecs-registration.sh ==="
-# Safer curl proto restriction form:
-spawn sudo curl --proto "=https" -o ecs-registration.sh https://qu-releases.qubeyond.com/qubox/ecs-registration.sh
-expect eof
-
-puts "\n=== chmod +x ecs-registration.sh ==="
-spawn sudo chmod +x ecs-registration.sh
-expect eof
-
-# ---------- Step 2: Run ecs-registration.sh and answer prompts ----------
-puts "\n=== Running ecs-registration.sh ==="
-spawn sudo ./ecs-registration.sh
-
-# Device name prompts
-expect -re {Do you want to set a different device name\?\s*\(y/n\)} { send "y\r" }
-expect -re {Please enter a name to identify this device.*}         { send "$device_name\r" }
-
-# Purple enter
-puts "Purple screen"
-# expect -re {Purple screen popup.*\[enter\]} { send "\r" }
-
-# Static IP choice -> NO (because we computed an IP, and it will be updated later using correct_cidr.py)
-expect -re {Do you want to set a static ip address\?\s*\(y/n\)} { send "n\r" }
-
-expect eof
-puts "\n=== ecs-registration.sh finished ==="
-
-# ---------- Step 3: Wait for docker readiness ----------
-puts "\n=== Waiting for 10 containers and traefik ==="
-# wait_for_dockers 10 "ecs-qu-box-prod-*-traefik-*"
-puts "\n=== skipping due to test environment ==="
-
-# ---------- Step 4: Run /home/qu/activate.sh and capture GUID ----------
-puts "\n=== Running /home/qu/activate.sh and capturing GUID ==="
-spawn bash -c "cd /home/qu && bash activate.sh"
-expect_user -re "\r"
-
-# GUID pattern: 6 groups of 4 alnum separated by 5 dashes
-# Example: 66be-3c3a-5647-9387-c0c4-1890
 
 # ---------- Step 5: Configure IP with correct_cidr.py ----------
 puts -nonewline "\n=== continue with IP configuration? (y/n): "
