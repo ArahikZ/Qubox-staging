@@ -117,28 +117,9 @@ puts "\n=== skipping due to test environment ==="
 puts "\n=== Running /home/qu/activate.sh and capturing GUID ==="
 spawn bash -c "cd /home/qu && bash activate.sh"
 
-set guid ""
-
+expect eof
 # GUID pattern: 6 groups of 4 alnum separated by 5 dashes
 # Example: 66be-3c3a-5647-9387-c0c4-1890
-expect {
-    -re {([A-Za-z0-9]{4}(?:-[A-Za-z0-9]{4}){5})} {
-        set guid $expect_out(1,string)
-        puts "Captured GUID: $guid"
-        exp_continue
-    }
-    eof { }
-}
-
-if {$guid eq ""} {
-    puts "WARNING: No GUID captured."
-} else {
-    set guid_file "./activation_guid.txt"
-    set gfp [open $guid_file "w"]
-    puts $gfp $guid
-    close $gfp
-    puts "Wrote GUID to $guid_file"
-}
 
 # ---------- Step 5: Configure IP with correct_cidr.py ----------
 puts -nonewline "\n=== continue with IP configuration? (y/n): "
