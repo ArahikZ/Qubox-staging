@@ -129,7 +129,7 @@ expect {
     }
     eof { }
 }
-
+expect eof
 puts "\n=== ecs-registration.sh finished ==="
 
 # ---------- Step 3: Wait for docker readiness ----------
@@ -164,7 +164,7 @@ if {$guid eq ""} {
 }
 
 # ---------- Step 5: Configure IP with correct_cidr.py ----------
-puts -nonewline "\n=== Are you ready to configure the IP address? (y/n): "
+puts -nonewline "\n=== continue with IP configuration? (y/n): "
 flush stdout
 expect_user -re "(.*)\n"
 set ready_ip [string tolower [string trim $expect_out(1,string)]]
@@ -186,9 +186,47 @@ if {$ready_ip eq "y" || $ready_ip eq "yes"} {
 } else {
     puts "Skipping IP configuration."
 }
+# ---------- Step 6: timeadjustments ----------
 
-# ---------- Step 6: Install BigFix ----------
-puts -nonewline "\n=== Are you ready for BigFix installation? (y/n): "
+puts "\n=== System Time Zone Configuration ==="
+puts "Please select a timezone:"
+puts "1) US/Eastern"
+puts "2) US/Central"
+puts "3) US/Mountain"
+puts "4) US/Pacific"
+puts -nonewline "Enter your choice (1-4): "
+flush stdout
+expect_user -re "(.*)\n"
+set tz_choice [string trim $expect_out(1,string)]
+
+switch $tz_choice {
+    "1" {
+        set timezone "US/Eastern"
+    }
+    "2" {
+        set timezone "US/Central"
+    }
+    "3" {
+        set timezone "US/Mountain"
+    }
+    "4" {
+        set timezone "US/Pacific"
+    }
+    default {
+        puts "Invalid choice. Skipping timezone configuration."
+        set timezone ""
+    }
+}
+
+if {$timezone ne ""} {
+    puts "\n=== Setting timezone to $timezone ==="
+    spawn sudo timedatectl set-timezone $timezone
+    expect eof
+    puts "Timezone set successfully."
+}
+
+# ---------- Step 7: Install BigFix ----------
+puts -nonewline "\n=== continue with BigFix installation? (y/n): "
 flush stdout
 expect_user -re "(.*)\n"
 set ready_bigfix [string tolower [string trim $expect_out(1,string)]]
