@@ -116,8 +116,8 @@ puts "\n=== skipping due to test environment ==="
 # ---------- Step 4: Run /home/qu/activate.sh and capture GUID ----------
 puts "\n=== Running /home/qu/activate.sh and capturing GUID ==="
 spawn bash -c "cd /home/qu && bash activate.sh"
+expect_user -re "(.*)\r\n"
 
-expect eof
 # GUID pattern: 6 groups of 4 alnum separated by 5 dashes
 # Example: 66be-3c3a-5647-9387-c0c4-1890
 
