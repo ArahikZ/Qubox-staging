@@ -31,7 +31,7 @@ puts "Computed DEVICE_NAME: $device_name"
 set first_octet  "10"
 set second_octet [expr {int($store_num / 256) + 130}]
 set third_octet  [expr {$store_num % 256}]
-set last_octet   "27"
+set last_octet   "9"
 set ip_address "${first_octet}.${second_octet}.${third_octet}.${last_octet}"
 
 puts "Computed IP_ADDRESS: $ip_address"
@@ -93,7 +93,7 @@ if {$ready_ip eq "y" || $ready_ip eq "yes"} {
     
     expect "Enter required IP address: " { send "$ip_address\r" }
     expect "Enter desired gateay address: " { send "$gateway\r" }
-    expect -re {Is the follwing info correct.*\(y/n\)} { send "y\r" }
+    expect -re {Is the follwing info correct.*\(y/n\)} { send "yes\r" }
     
     expect eof
     puts "\n=== IP configuration completed ==="
