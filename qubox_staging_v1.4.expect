@@ -31,7 +31,7 @@ puts "Computed DEVICE_NAME: $device_name"
 set first_octet  "10"
 set second_octet [expr {int($store_num / 256) + 130}]
 set third_octet  [expr {$store_num % 256}]
-set last_octet   "9"
+set last_octet   "27"
 set ip_address "${first_octet}.${second_octet}.${third_octet}.${last_octet}"
 
 puts "Computed IP_ADDRESS: $ip_address"
@@ -76,27 +76,113 @@ proc wait_for_dockers {min_count name_pattern} {
     }
 }
 
+# ---------- (Optional) Set hostname early ----------
+# If your environment supports it and you want OS hostname to match:
+# exec sudo hostnamectl set-hostname $device_name
 
-# ---------- Step 5: Configure IP with correct_cidr.py ----------
+# ---------- Step 1: Download ecs-registration.sh ----------
+puts "\n=== Downloading ecs-registration.sh ==="
+# Safer curl proto restriction form:
+spawn sudo curl --proto "=https" -o ecs-registration.sh https://qu-releases.qubeyond.com/qubox/ecs-registration.sh
+expect eof
+
+puts "\n=== chmod +x ecs-registration.sh ==="
+spawn sudo chmod +x ecs-registration.sh
+expect eof
+
+# ---------- Step 2: Run ecs-registration.sh and answer prompts ----------
+puts "\n=== Running ecs-registration.sh ==="
+spawn sudo ./ecs-registration.sh
+
+# Device name prompts
+expect -re {Do you want to set a different device name\?\s*\(y/n\)} { send "y\r" }
+expect -re {Please enter a name to identify this device.*}         { send "$device_name\r" }
+
+# Purple enter
+puts "Purple screen"
+# expect -re {Purple screen popup.*\[enter\]} { send "\r" }
+
+# Static IP choice -> NO (because we computed an IP, and it will be updated later using correct_cidr.py)
+expect -re {Do you want to set a static ip address\?\s*\(y/n\)} { send "n\r" }
+
+expect eof
+puts "\n=== ecs-registration.sh finished ==="
+
+# ---------- Step 3: Wait for docker readiness ----------
+puts "\n=== Waiting for 10 containers and traefik ==="
+# wait_for_dockers 10 "ecs-qu-box-prod-*-traefik-*"
+puts "\n=== skipping due to test environment ==="
+
+# ---------- Step 4: Run /home/qu/activate.sh and capture GUID ----------
+puts "\n=== Running /home/qu/activate.sh and capturing GUID ==="
+spawn bash /home/qu/activate.sh
+
+set guid ""
+
+# GUID pattern: 6 groups of 4 alnum separated by 5 dashes
+# Example: 66be-3c3a-5647-9387-c0c4-1890
+expect {
+    -re {([A-Za-z0-9]{4}(?:-[A-Za-z0-9]{4}){5})} {
+        set guid $expect_out(1,string)
+        puts "Captured GUID: $guid"
+        exp_continue
+    }
+    -re {[Pp]ress.*[Ee]nter|[Hh]it.*[Ee]nter|\[enter\]} {
+        send "\r"
+        exp_continue
+    }
+    eof { }
+}
+
+if {$guid eq ""} {
+    puts "WARNING: No GUID captured."
+} else {
+    # Append GUID to the runtime env file
+    set gfp [open $runtime_file "a"]
+    puts $gfp "ACTIVATION_GUID=$guid"
+    close $gfp
+    puts "Wrote GUID to $runtime_file"
+}
+
+# ---------- Step 5: Configure IP directly ----------
 puts -nonewline "\n=== continue with IP configuration? (y/n): "
 flush stdout
 expect_user -re "(.*)\n"
 set ready_ip [string tolower [string trim $expect_out(1,string)]]
 
 if {$ready_ip eq "y" || $ready_ip eq "yes"} {
-    puts "\n=== Running correct_cidr.py to configure IP ==="
+    puts "\n=== Configuring static IP address ==="
     
     # Calculate gateway (assuming .30 in the same subnet)
     set gateway "${first_octet}.${second_octet}.${third_octet}.30"
     
-    spawn sudo python3 correct_cidr.py -u
+    # Add /27 CIDR to IP
+    set ip_with_cidr "${ip_address}/27"
     
-    expect "Enter required IP address: " { send "$ip_address\r" }
-    expect "Enter desired gateay address: " { send "$gateway\r" }
-    expect -re {Is the follwing info correct.*\(y/n\)} { send "yes\r" }
+    puts "IP Address: $ip_with_cidr"
+    puts "Gateway: $gateway"
     
-    expect eof
-    puts "\n=== IP configuration completed ==="
+    # Get NIC name from existing netplan config
+    set nic_cmd "grep -A1 'ethernets:' /etc/netplan/01-netcfg.yaml | tail -1 | awk '{print \$1}' | tr -d ':'"
+    set nic_name [exec sh -c $nic_cmd]
+    set nic_name [string trim $nic_name]
+    puts "Network Interface: $nic_name"
+    
+    # Create netplan configuration
+    set netplan_config "network:\n  version: 2\n  renderer: networkd\n  ethernets:\n    ${nic_name}:\n      dhcp4: no\n      addresses:\n        - ${ip_with_cidr}\n      gateway4: ${gateway}\n      nameservers:\n        addresses: \[10.104.48.31, 10.104.48.32, 10.104.48.33, 10.95.128.31, 10.95.128.5\]"
+    
+    # Write to temp file then move to final location
+    set temp_file "/tmp/netplan_temp.yaml"
+    set fp [open $temp_file "w"]
+    puts $fp [exec echo -e $netplan_config]
+    close $fp
+    
+    # Move to netplan directory
+    exec sudo mv $temp_file /etc/netplan/01-netcfg.yaml
+    exec sudo chmod 600 /etc/netplan/01-netcfg.yaml
+    
+    puts "\n=== Netplan configuration updated ==="
+    puts "To apply: sudo netplan apply"
 } else {
     puts "Skipping IP configuration."
 }
