@@ -31,7 +31,7 @@ puts "Computed DEVICE_NAME: $device_name"
 set first_octet  "10"
 set second_octet [expr {int($store_num / 256) + 130}]
 set third_octet  [expr {$store_num % 256}]
-set last_octet   "27"
+set last_octet   "9"
 set ip_address "${first_octet}.${second_octet}.${third_octet}.${last_octet}"
 
 puts "Computed IP_ADDRESS: $ip_address"
@@ -110,8 +110,8 @@ puts "\n=== ecs-registration.sh finished ==="
 
 # ---------- Step 3: Wait for docker readiness ----------
 puts "\n=== Waiting for 10 containers and traefik ==="
-# wait_for_dockers 10 "ecs-qu-box-prod-*-traefik-*"
-puts "\n=== skipping due to test environment ==="
+wait_for_dockers 10 "ecs-qu-box-prod-*-traefik-*"
+puts "\n=== Dockers are loaded ==="
 
 # ---------- Step 4: Run /home/qu/activate.sh and capture GUID ----------
 puts "\n=== Running /home/qu/activate.sh and capturing GUID ==="
