@@ -72,7 +72,7 @@ proc wait_for_dockers {min_count name_pattern} {
             break
         }
 
-        sleep 5
+        sleep 50
     }
 }
 
@@ -128,6 +128,9 @@ expect {
         exp_continue
     }
     -re {[Pp]ress.*[Ee]nter|[Hh]it.*[Ee]nter|\[enter\]} {
+        puts "\n*** PAUSED: Complete activation work on EI, then press Enter here to continue ***"
+        flush stdout
+        expect_user -re "(.*)\n"
         send "\r"
         exp_continue
     }
@@ -143,11 +146,6 @@ if {$guid eq ""} {
     close $gfp
     puts "Wrote GUID to $runtime_file"
 }
-
-# ---------- Wait for user to continue ----------
-puts -nonewline "\n=== Press Enter to continue ==="
-flush stdout
-expect_user -re "(.*)\n"
 
 # ---------- Step 5: Configure IP directly ----------
 puts -nonewline "\n=== continue with IP configuration? (y/n): "
