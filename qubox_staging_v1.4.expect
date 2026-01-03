@@ -144,6 +144,11 @@ if {$guid eq ""} {
     puts "Wrote GUID to $runtime_file"
 }
 
+# ---------- Wait for user to continue ----------
+puts -nonewline "\n=== Press Enter to continue ==="
+flush stdout
+expect_user -re "(.*)\n"
+
 # ---------- Step 5: Configure IP directly ----------
 puts -nonewline "\n=== continue with IP configuration? (y/n): "
 flush stdout
@@ -232,9 +237,42 @@ expect_user -re "(.*)\n"
 set ready_bigfix [string tolower [string trim $expect_out(1,string)]]
 
 if {$ready_bigfix eq "y" || $ready_bigfix eq "yes"} {
-    puts "\n=== Running BigFix_QuBox_Install.sh ==="
-    spawn sudo bash BigFix_QuBox_Install.sh
+    puts "\n=== Begin BigFix Installation ==="
+    
+    # Create installation directory
+    puts "Creating BESClient directory..."
+    spawn sudo mkdir -v /etc/opt/BESClient
     expect eof
+    
+    # Download masthead
+    puts "Download Masthead - 25% Complete"
+    spawn sudo wget http://epmanp.jackinthebox.com:52311/masthead/masthead.afxm -O /etc/opt/BESClient/masthead.afxm
+    expect eof
+    
+    # Download BigFix Agent
+    puts "Download BigFix Agent - 50% Complete"
+    spawn sudo wget https://software.bigfix.com/download/bes/110/BESAgent-11.0.4.60-ubuntu18.amd64.deb -O /etc/opt/BESClient/BESAgent-11.0.4.60-ubuntu18.amd64.deb
+    expect eof
+    
+    # Change permissions
+    puts "Change permissions - 75% Complete"
+    spawn sudo chmod -R 777 /etc/opt/BESClient
+    expect eof
+    
+    # Install BES Agent
+    puts "Install BigFix - 90% Complete"
+    spawn sudo dpkg -i /etc/opt/BESClient/BESAgent-11.0.4.60-ubuntu18.amd64.deb
+    expect eof
+    
+    # Verify service is running
+    puts "Verify Service is running - 100% Complete"
+    spawn sudo systemctl status besclient --no-pager
+    expect eof
+    
+    puts "Verify completed - Please take a picture for documentation"
+    spawn ps -ef
+    expect eof
+    
     puts "\n=== BigFix installation completed ==="
 } else {
     puts "Skipping BigFix installation."
