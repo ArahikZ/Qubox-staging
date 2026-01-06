@@ -9,17 +9,17 @@ proc ask_user {prompt} {
     return [string trim $expect_out(1,string)]
 }
 
-set store_num [ask_user "Enter Store Number: "]
-set qu_num    [ask_user "Enter Qu Number: "]
-set dev_id    [ask_user "Enter Device ID: "]
+set store_num [ask_user "Enter JITB Store Number: "]
+set qu_num    [ask_user "Enter Qu Store ID: "]
+set dev_id    [ask_user "Enter Qubox Terminal ID: "]
 
 if {![string is integer -strict $store_num]} {
-    puts "ERROR: Store Number must be an integer."
+    puts "ERROR:JITB Store Number must be an integer."
     exit 1
 }
 # dev_id might be numeric; if it isn't, IP last octet will be invalid. Warn, but proceed.
 if {![string is integer -strict $dev_id]} {
-    puts "WARNING: Device ID is not an integer. IP last octet may be invalid."
+    puts "WARNING: Qubox Terminal ID is not an integer. IP last octet may be invalid."
 }
 
 # ---------- Compute device name ----------
@@ -124,7 +124,7 @@ set guid ""
 expect {
     -re {([A-Za-z0-9]{4}(?:-[A-Za-z0-9]{4}){5})} {
         set guid $expect_out(1,string)
-        puts "Captured GUID: $guid"
+        puts "\n Captured GUID: $guid"
         exp_continue
     }
     -re {[Pp]ress.*[Ee]nter|[Hh]it.*[Ee]nter|\[enter\]} {
@@ -148,6 +148,8 @@ if {$guid eq ""} {
 }
 
 # ---------- Step 5: Configure IP directly ----------
+# ethernets value should be enp0s31f6 but it was eno1 in tests, hardcoding the value for now.
+# considering all devices will be the same model.
 puts -nonewline "\n=== continue with IP configuration? (y/n): "
 flush stdout
 expect_user -re "(.*)\n"
@@ -168,8 +170,10 @@ if {$ready_ip eq "y" || $ready_ip eq "yes"} {
     # Get NIC name from existing netplan config
     set nic_cmd "grep -A1 'ethernets:' /etc/netplan/01-netcfg.yaml | tail -1 | awk '{print \$1}' | tr -d ':'"
     set nic_name [exec sh -c $nic_cmd]
+    # should be enp0s31f6 but it was eno1 hardcoding the value for now
     set nic_name [string trim $nic_name]
-    puts "Network Interface: $nic_name"
+    set nic_name "enp0s31f6"
+    puts "Network Interface: $nic_name" 
     
     # Create netplan configuration
     set netplan_config "network:\n  version: 2\n  renderer: networkd\n  ethernets:\n    ${nic_name}:\n      dhcp4: no\n      addresses:\n        - ${ip_with_cidr}\n      gateway4: ${gateway}\n      nameservers:\n        addresses: \[10.104.48.31, 10.104.48.32, 10.104.48.33, 10.95.128.31, 10.95.128.5\]"
@@ -243,8 +247,9 @@ if {$ready_bigfix eq "y" || $ready_bigfix eq "yes"} {
     expect eof
     
     # Download masthead
+    # Edgar found that we needed to rename the masthead.afxm to actionsite.afxm.
     puts "Download Masthead - 25% Complete"
-    spawn sudo wget http://epmanp.jackinthebox.com:52311/masthead/masthead.afxm -O /etc/opt/BESClient/masthead.afxm
+    spawn sudo wget http://epmanp.jackinthebox.com:52311/masthead/masthead.afxm -O /etc/opt/BESClient/actionsite.afxm
     expect eof
     
     # Download BigFix Agent
@@ -277,7 +282,7 @@ if {$ready_bigfix eq "y" || $ready_bigfix eq "yes"} {
 }
 
 puts "\n=== Done (interactive run) ==="
-
+#what a day
 
 
 
