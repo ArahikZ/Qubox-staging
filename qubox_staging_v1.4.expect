@@ -267,6 +267,13 @@ if {$ready_bigfix eq "y" || $ready_bigfix eq "yes"} {
     spawn sudo dpkg -i /etc/opt/BESClient/BESAgent-11.0.4.60-ubuntu18.amd64.deb
     expect eof
     
+    # Start and enable the service
+    puts "Starting BigFix service - 95% Complete"
+    spawn sudo systemctl enable besclient
+    expect eof
+    spawn sudo systemctl start besclient
+    expect eof
+    
     # Verify service is running
     puts "Verify Service is running - 100% Complete"
     spawn sudo systemctl status besclient --no-pager
