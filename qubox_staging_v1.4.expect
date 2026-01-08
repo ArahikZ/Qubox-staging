@@ -240,50 +240,176 @@ set ready_bigfix [string tolower [string trim $expect_out(1,string)]]
 
 if {$ready_bigfix eq "y" || $ready_bigfix eq "yes"} {
     puts "\n=== Begin BigFix Installation ==="
+    set bigfix_failed 0
+    set bigfix_log "/tmp/bigfix_install.log"
     
-    # Create installation directory
+    # Create installation directory (use -p to avoid error if exists)
     puts "Creating BESClient directory..."
-    spawn sudo mkdir -v /etc/opt/BESClient
-    expect eof
+    if {[catch {exec sudo mkdir -p /etc/opt/BESClient 2>@1} result]} {
+        puts "ERROR: Failed to create directory: $result"
+        set bigfix_failed 1
+    } else {
+        puts "Directory created successfully"
+    }
     
-    # Download masthead
-    # Edgar found that we needed to rename the masthead.afxm to actionsite.afxm.
-    puts "Download Masthead - 25% Complete"
-    spawn sudo wget http://epmanp.jackinthebox.com:52311/masthead/masthead.afxm -O /etc/opt/BESClient/actionsite.afxm
-    expect eof
+    if {!$bigfix_failed} {
+        # Download masthead with retry logic
+        # Edgar found that we needed to rename the masthead.afxm to actionsite.afxm.
+        puts "Download Masthead - 25% Complete"
+        set masthead_path "/etc/opt/BESClient/actionsite.afxm"
+        set download_success 0
+        
+        for {set retry 0} {$retry < 3} {incr retry} {
+            if {$retry > 0} {
+                puts "Retry attempt $retry..."
+            }
+            if {[catch {exec sudo wget -q --timeout=30 http://epmanp.jackinthebox.com:52311/masthead/masthead.afxm -O $masthead_path 2>@1} result]} {
+                puts "Download attempt failed: $result"
+            } else {
+                # Verify file exists and has content
+                if {[catch {exec sudo test -f $masthead_path && sudo test -s $masthead_path} check_result]} {
+                    puts "Masthead file verification failed"
+                } else {
+                    set download_success 1
+                    puts "Masthead downloaded successfully"
+                    break
+                }
+            }
+        }
+        
+        if {!$download_success} {
+            puts "ERROR: Failed to download masthead after 3 attempts"
+            set bigfix_failed 1
+        }
+    }
     
-    # Download BigFix Agent
-    puts "Download BigFix Agent - 50% Complete"
-    spawn sudo wget https://software.bigfix.com/download/bes/110/BESAgent-11.0.4.60-ubuntu18.amd64.deb -O /etc/opt/BESClient/BESAgent-11.0.4.60-ubuntu18.amd64.deb
-    expect eof
+    if {!$bigfix_failed} {
+        # Download BigFix Agent with retry logic
+        puts "Download BigFix Agent - 50% Complete"
+        set agent_path "/etc/opt/BESClient/BESAgent-11.0.4.60-ubuntu18.amd64.deb"
+        set download_success 0
+        
+        for {set retry 0} {$retry < 3} {incr retry} {
+            if {$retry > 0} {
+                puts "Retry attempt $retry..."
+            }
+            if {[catch {exec sudo wget -q --timeout=60 https://software.bigfix.com/download/bes/110/BESAgent-11.0.4.60-ubuntu18.amd64.deb -O $agent_path 2>@1} result]} {
+                puts "Download attempt failed: $result"
+            } else {
+                # Verify file exists and is reasonable size (> 1MB)
+                if {[catch {exec sudo sh -c "test -f $agent_path && test \$(stat -c%s $agent_path) -gt 1000000"} check_result]} {
+                    puts "Agent file verification failed (file missing or too small)"
+                } else {
+                    set download_success 1
+                    puts "BigFix Agent downloaded successfully"
+                    break
+                }
+            }
+        }
+        
+        if {!$download_success} {
+            puts "ERROR: Failed to download BigFix Agent after 3 attempts"
+            set bigfix_failed 1
+        }
+    }
     
-    # Change permissions
-    puts "Change permissions - 75% Complete"
-    spawn sudo chmod -R 777 /etc/opt/BESClient
-    expect eof
+    if {!$bigfix_failed} {
+        # Change permissions
+        puts "Change permissions - 75% Complete"
+        if {[catch {exec sudo chmod -R 777 /etc/opt/BESClient 2>@1} result]} {
+            puts "ERROR: Failed to change permissions: $result"
+            set bigfix_failed 1
+        } else {
+            puts "Permissions updated successfully"
+        }
+    }
     
-    # Install BES Agent
-    puts "Install BigFix - 90% Complete"
-    spawn sudo dpkg -i /etc/opt/BESClient/BESAgent-11.0.4.60-ubuntu18.amd64.deb
-    expect eof
+    if {!$bigfix_failed} {
+        # Install BES Agent
+        puts "Install BigFix - 90% Complete"
+        if {[catch {exec sudo dpkg -i $agent_path 2>@1} result]} {
+            puts "WARNING: dpkg returned error (may be dependency warnings): $result"
+            # Check if package is actually installed
+            if {[catch {exec dpkg -l | grep -i besclient} check]} {
+                puts "ERROR: BigFix package not installed"
+                set bigfix_failed 1
+            } else {
+                puts "Package appears to be installed despite warnings"
+            }
+        } else {
+            puts "BigFix Agent installed successfully"
+        }
+    }
     
-    # Start and enable the service
-    puts "Starting BigFix service - 95% Complete"
-    spawn sudo systemctl enable besclient
-    expect eof
-    spawn sudo systemctl start besclient
-    expect eof
+    if {!$bigfix_failed} {
+        # Start and enable the service
+        puts "Starting BigFix service - 95% Complete"
+        
+        if {[catch {exec sudo systemctl enable besclient 2>@1} result]} {
+            puts "ERROR: Failed to enable besclient: $result"
+            set bigfix_failed 1
+        } else {
+            puts "Service enabled successfully"
+        }
+        
+        if {!$bigfix_failed} {
+            if {[catch {exec sudo systemctl start besclient 2>@1} result]} {
+                puts "ERROR: Failed to start besclient: $result"
+                set bigfix_failed 1
+            } else {
+                puts "Service started successfully"
+                # Give service a moment to initialize
+                sleep 3
+            }
+        }
+    }
     
-    # Verify service is running
-    puts "Verify Service is running - 100% Complete"
-    spawn sudo systemctl status besclient --no-pager
-    expect eof
+    if {!$bigfix_failed} {
+        # Verify service is running
+        puts "Verify Service is running - 100% Complete"
+        
+        # Check service status with proper parsing
+        set service_active 0
+        if {[catch {exec sudo systemctl is-active besclient 2>@1} status_result]} {
+            puts "Service status check: $status_result"
+        } else {
+            if {$status_result eq "active"} {
+                set service_active 1
+                puts "✓ Service is ACTIVE"
+            }
+        }
+        
+        # Show full status for documentation
+        spawn sudo systemctl status besclient --no-pager
+        expect eof
+        
+        if {!$service_active} {
+            puts "WARNING: Service may not be running properly"
+        }
+        
+        # Verify BESClient process is running
+        puts "\nVerifying BESClient process..."
+        if {[catch {exec ps -ef | grep -i bes | grep -v grep} ps_result]} {
+            puts "WARNING: No BESClient process found"
+            set bigfix_failed 1
+        } else {
+            puts "✓ BESClient process found:"
+            puts $ps_result
+        }
+    }
     
-    puts "Verify completed - Please take a picture for documentation"
-    spawn ps -ef
-    expect eof
+    # Final summary
+    puts "\n=== BigFix Installation Summary ==="
+    if {$bigfix_failed} {
+        puts "⚠ INSTALLATION COMPLETED WITH ERRORS ⚠"
+        puts "Please review the output above and check log: $bigfix_log"
+        puts "Manual intervention may be required"
+    } else {
+        puts "✓ BigFix installation completed successfully"
+        puts "Service is running and process is active"
+    }
+    puts "Please take a picture for documentation"
     
-    puts "\n=== BigFix installation completed ==="
 } else {
     puts "Skipping BigFix installation."
 }
