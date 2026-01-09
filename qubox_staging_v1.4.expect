@@ -232,6 +232,7 @@ if {$timezone ne ""} {
     puts "Timezone set successfully."
 }
 
+
 # ---------- Step 7: Install BigFix ----------
 puts -nonewline "\n=== continue with BigFix installation? (y/n): "
 flush stdout
@@ -263,17 +264,12 @@ if {$ready_bigfix eq "y" || $ready_bigfix eq "yes"} {
             if {$retry > 0} {
                 puts "Retry attempt $retry..."
             }
-            if {[catch {exec sudo wget -q --timeout=30 http://epmanp.jackinthebox.com:52311/masthead/masthead.afxm -O $masthead_path 2>@1} result]} {
+            if {[catch {exec sudo wget -q http://epmanp.jackinthebox.com:52311/masthead/masthead.afxm -O $masthead_path 2>@1} result]} {
                 puts "Download attempt failed: $result"
             } else {
-                # Verify file exists and has content
-                if {[catch {exec sudo test -f $masthead_path && sudo test -s $masthead_path} check_result]} {
-                    puts "Masthead file verification failed"
-                } else {
-                    set download_success 1
-                    puts "Masthead downloaded successfully"
-                    break
-                }
+                set download_success 1
+                puts "Masthead downloaded successfully"
+                break
             }
         }
         
@@ -293,17 +289,12 @@ if {$ready_bigfix eq "y" || $ready_bigfix eq "yes"} {
             if {$retry > 0} {
                 puts "Retry attempt $retry..."
             }
-            if {[catch {exec sudo wget -q --timeout=60 https://software.bigfix.com/download/bes/110/BESAgent-11.0.4.60-ubuntu18.amd64.deb -O $agent_path 2>@1} result]} {
+            if {[catch {exec sudo wget -q https://software.bigfix.com/download/bes/110/BESAgent-11.0.4.60-ubuntu18.amd64.deb -O $agent_path 2>@1} result]} {
                 puts "Download attempt failed: $result"
             } else {
-                # Verify file exists and is reasonable size (> 1MB)
-                if {[catch {exec sudo sh -c "test -f $agent_path && test \$(stat -c%s $agent_path) -gt 1000000"} check_result]} {
-                    puts "Agent file verification failed (file missing or too small)"
-                } else {
-                    set download_success 1
-                    puts "BigFix Agent downloaded successfully"
-                    break
-                }
+                set download_success 1
+                puts "BigFix Agent downloaded successfully"
+                break
             }
         }
         
@@ -417,6 +408,6 @@ if {$ready_bigfix eq "y" || $ready_bigfix eq "yes"} {
 puts "\n=== Done (interactive run) ==="
 #what a day
 
-
-
 exit 0
+
+
